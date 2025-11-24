@@ -166,3 +166,24 @@ axes[2].set_xlabel('Person Label')
 
 plt.tight_layout()
 plt.show()
+
+from sklearn.decomposition import PCA
+
+# Try different PCA dimensions
+components_list = [10, 20, 50, 100]
+
+explained_variances = []
+
+for n in components_list:
+    pca = PCA(n_components=n)
+    pca.fit(X_train_scaled)
+    explained_variances.append(pca.explained_variance_ratio_.sum())
+
+# Plot how much variance each PCA model keeps
+plt.figure(figsize=(8,5))
+plt.plot(components_list, explained_variances, marker='o')
+plt.title("Explained Variance vs PCA Components")
+plt.xlabel("Number of Components")
+plt.ylabel("Total Explained Variance")
+plt.grid(True)
+plt.show()
