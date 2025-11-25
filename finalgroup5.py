@@ -171,18 +171,33 @@ plt.show()
 
 #*******************************************************************************
 from sklearn.decomposition import PCA
+import numpy as np
+import matplotlib.pyplot as plt
 
-# Try different PCA dimensions
+# Fit full PCA to compute cumulative explained variance 
+pca_full = PCA().fit(X_train_scaled)
+cumulative_variance = np.cumsum(pca_full.explained_variance_ratio_)
+
+# Find number of components needed for 95% variance 
+n_components_95 = np.searchsorted(cumulative_variance, 0.95) + 1
+print("Number of PCA components to retain 95% variance:", n_components_95)
+
+# Build PCA 95% model
+pca = PCA(n_components=n_components_95)
+X_train_pca = pca.fit_transform(X_train_scaled)
+X_train_pca_reconstructed = pca.inverse_transform(X_train_pca)
+
+X_test_pca = pca.transform(X_test_scaled)
+X_test_pca_reconstructed = pca.inverse_transform(X_test_pca)
+
 components_list = [10, 20, 50, 100]
-
 explained_variances = []
 
 for n in components_list:
-    pca = PCA(n_components=n)
-    pca.fit(X_train_scaled)
-    explained_variances.append(pca.explained_variance_ratio_.sum())
+    pca_temp = PCA(n_components=n)
+    pca_temp.fit(X_train_scaled)
+    explained_variances.append(pca_temp.explained_variance_ratio_.sum())
 
-# Plot how much variance each PCA model keeps
 plt.figure(figsize=(8,5))
 plt.plot(components_list, explained_variances, marker='o')
 plt.title("Explained Variance vs PCA Components")
@@ -239,7 +254,6 @@ history = autoencoder.fit(
 X_train_ae_reconstructed = autoencoder.predict(X_train_scaled)
 X_val_ae_reconstructed   = autoencoder.predict(X_val_scaled)
 X_test_ae_reconstructed  = autoencoder.predict(X_test_scaled)
-
 
 from sklearn.decomposition import PCA
 import numpy as np
