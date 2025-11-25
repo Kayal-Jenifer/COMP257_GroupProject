@@ -207,6 +207,32 @@ plt.grid(True)
 plt.show()
 
 #*******************************************************************************
+import matplotlib.pyplot as plt
+
+# Choose some random indices from test set
+indices = np.random.choice(len(X_test_scaled), size=5, replace=False)
+
+plt.figure(figsize=(12, 6))
+plt.suptitle("PCA Reconstruction Visualization", fontsize=16)
+
+for i, idx in enumerate(indices):
+
+    # Original image
+    ax = plt.subplot(2, 5, i + 1)
+    plt.imshow(X_test_scaled[idx].reshape(112, 92), cmap='gray')
+    plt.axis("off")
+    ax.set_title("Original")
+
+    # PCA reconstructed image
+    ax = plt.subplot(2, 5, i + 6)
+    plt.imshow(X_test_pca_reconstructed[idx].reshape(112, 92), cmap='gray')
+    plt.axis("off")
+    ax.set_title("PCA Recon.")
+
+plt.tight_layout()
+plt.show()
+
+#*******************************************************************************
 from tensorflow.keras import layers, models
 from sklearn.preprocessing import MinMaxScaler
 
@@ -284,6 +310,30 @@ test_error_pca = np.mean(np.square(X_test_scaled - X_test_pca_reconstructed))
 
 print("\nPCA Reconstruction Error:")
 print(f"Train: {train_error_pca:.4f}, Val: {val_error_pca:.4f}, Test: {test_error_pca:.4f}")
+
+#*******************************************************************************
+import matplotlib.pyplot as plt
+
+# pick 5 samples from validation set for visualization
+n = 5
+plt.figure(figsize=(10, 4))
+
+for i in range(n):
+    # original
+    ax = plt.subplot(2, n, i + 1)
+    plt.imshow(X_val_scaled[i].reshape(112, 92), cmap='gray')
+    plt.title("Original")
+    plt.axis("off")
+
+    # reconstructed by autoencoder
+    ax = plt.subplot(2, n, i + 1 + n)
+    plt.imshow(X_val_ae_reconstructed[i].reshape(112, 92), cmap='gray')
+    plt.title("Reconstructed")
+    plt.axis("off")
+
+plt.suptitle("Autoencoder Reconstruction Visualization")
+plt.show()
+
 
 
 
