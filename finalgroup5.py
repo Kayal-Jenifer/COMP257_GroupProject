@@ -167,6 +167,9 @@ axes[2].set_xlabel('Person Label')
 plt.tight_layout()
 plt.show()
 
+
+
+#*******************************************************************************
 from sklearn.decomposition import PCA
 
 # Try different PCA dimensions
@@ -187,3 +190,88 @@ plt.xlabel("Number of Components")
 plt.ylabel("Total Explained Variance")
 plt.grid(True)
 plt.show()
+
+#*******************************************************************************
+from tensorflow.keras import layers, models
+from sklearn.preprocessing import MinMaxScaler
+
+scaler = MinMaxScaler()  # Scales each feature to [0,1]
+X_train_scaled = scaler.fit_transform(X_train)
+X_val_scaled = scaler.transform(X_val)
+X_test_scaled = scaler.transform(X_test)
+
+# Size of input (number of pixels)
+input_dim = X_train_scaled.shape[1]
+
+# Latent dimension (compressed size)
+latent_dim = 50
+
+# Build the autoencoder
+input_layer = layers.Input(shape=(input_dim,))
+
+# Encoder
+encoded = layers.Dense(200, activation='relu')(input_layer)
+encoded = layers.Dense(100, activation='relu')(encoded)
+latent = layers.Dense(latent_dim, activation='relu')(encoded)
+
+# Decoder
+decoded = layers.Dense(100, activation='relu')(latent)
+decoded = layers.Dense(200, activation='relu')(decoded)
+output_layer = layers.Dense(input_dim, activation='sigmoid')(decoded)
+
+# Model
+autoencoder = models.Model(input_layer, output_layer)
+encoder = models.Model(input_layer, latent)  # To extract latent features later
+
+autoencoder.compile(optimizer='adam', loss='mse')
+
+autoencoder.summary()
+
+# Train the autoencoder
+history = autoencoder.fit(
+    X_train_scaled, X_train_scaled,
+    epochs=30,
+    batch_size=32,
+    validation_data=(X_val_scaled, X_val_scaled)
+)
+
+# Reconstruction from autoencoder
+X_train_ae_reconstructed = autoencoder.predict(X_train_scaled)
+X_val_ae_reconstructed   = autoencoder.predict(X_val_scaled)
+X_test_ae_reconstructed  = autoencoder.predict(X_test_scaled)
+
+
+from sklearn.decomposition import PCA
+import numpy as np
+
+# --- Compute reconstruction error for autoencoder ---
+train_error_ae = np.mean(np.square(X_train_scaled - X_train_ae_reconstructed))
+val_error_ae = np.mean(np.square(X_val_scaled - X_val_ae_reconstructed))
+test_error_ae = np.mean(np.square(X_test_scaled - X_test_ae_reconstructed))
+
+print("Autoencoder Reconstruction Error:")
+print(f"Train: {train_error_ae:.4f}, Val: {val_error_ae:.4f}, Test: {test_error_ae:.4f}")
+
+# --- PCA with same latent dimension ---
+pca = PCA(n_components=latent_dim)
+X_train_pca = pca.fit_transform(X_train_scaled)
+X_train_pca_reconstructed = pca.inverse_transform(X_train_pca)
+
+X_val_pca = pca.transform(X_val_scaled)
+X_val_pca_reconstructed = pca.inverse_transform(X_val_pca)
+
+X_test_pca = pca.transform(X_test_scaled)
+X_test_pca_reconstructed = pca.inverse_transform(X_test_pca)
+
+# --- Compute reconstruction error for PCA ---
+train_error_pca = np.mean(np.square(X_train_scaled - X_train_pca_reconstructed))
+val_error_pca = np.mean(np.square(X_val_scaled - X_val_pca_reconstructed))
+test_error_pca = np.mean(np.square(X_test_scaled - X_test_pca_reconstructed))
+
+print("\nPCA Reconstruction Error:")
+print(f"Train: {train_error_pca:.4f}, Val: {val_error_pca:.4f}, Test: {test_error_pca:.4f}")
+
+
+
+
+
