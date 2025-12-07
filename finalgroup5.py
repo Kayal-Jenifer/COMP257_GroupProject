@@ -336,85 +336,119 @@ plt.show()
 
 
 
-# *************************
-# 4. CLUSTERING 
+# =========================
+# 4. CLUSTERING
+# =========================
 
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+from sklearn.metrics import silhouette_score
+from sklearn.neighbors import NearestNeighbors
+from scipy.cluster.hierarchy import linkage, dendrogram
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
+print("\n=== SECTION 4: CLUSTERING START ===")
+
+# ----------------------------------------------------------
+#  Scale & PCA (Better dimensionality for clustering)
+# ----------------------------------------------------------
 scaler_cluster = StandardScaler()
 X_train_scaled_clean = scaler_cluster.fit_transform(X_train)
 
-# Re-run PCA specifically for clustering (StandardScaled data)
-# We use 95% variance preservation instead of a fixed number
-pca_cluster = PCA(n_components=0.95, random_state=92)
+pca_cluster = PCA(n_components=50, random_state=92)
 X_train_reduced = pca_cluster.fit_transform(X_train_scaled_clean)
 
-print(f"Data re-scaled and PCA re-calculated.")
-print(f"PCA retained {X_train_reduced.shape[1]} components.")
+print(f"PCA for clustering retained {X_train_reduced.shape[1]} components.")
 
+# ----------------------------------------------------------
+#  — Automatic K selection (Silhouette + Elbow)
+# ----------------------------------------------------------
+print("\nRunning K-Means sweep to determine optimal k...")
 
-# --- START CLUSTERING ALGORITHMS ---
-import os
-# Fixes memory leak warning on Windows
-os.environ['OMP_NUM_THREADS'] = '2'
+k_values = range(2, 15)
+sil_scores = []
+wcss = []
 
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.metrics import silhouette_score
-from sklearn.manifold import TSNE
-import seaborn as sns
+for k in k_values:
+    km = KMeans(n_clusters=k, random_state=92, n_init=20)
+    labels = km.fit_predict(X_train_reduced)
+    wcss.append(km.inertia_)
+    sil_scores.append(silhouette_score(X_train_reduced, labels))
 
-# 1. K-Means Clustering
-# *********************
-print("\n" + "="*50)
-print("K-MEANS CLUSTERING (OPTIMIZED)")
-print("="*50)
+best_k = k_values[np.argmax(sil_scores)]
+print(f"Best k (Silhouette): {best_k}")
 
-wcss_scores = []
-silhouette_scores = []
+# Plot: Silhouette + Elbow
+plt.figure(figsize=(10,5))
+plt.plot(k_values, sil_scores, marker='o')
+plt.title("Silhouette Score vs k")
+plt.xlabel("k")
+plt.ylabel("Silhouette Score")
+plt.grid(True)
+plt.show()
 
-# Testing different K values
-for k in range(2, 26):
-    #  n_init=20 gives the algorithm more attempts to find good centers
-    kmeans = KMeans(n_clusters=k, random_state=92, n_init=20)
-    kmeans.fit(X_train_reduced)
-    wcss_scores.append(kmeans.inertia_)
-    
-    if len(np.unique(kmeans.labels_)) > 1:
-        silhouette_scores.append(silhouette_score(X_train_reduced, kmeans.labels_))
-    else:
-        silhouette_scores.append(0)
+plt.figure(figsize=(10,5))
+plt.plot(k_values, wcss, marker='o')
+plt.title("Elbow Curve")
+plt.xlabel("k")
+plt.ylabel("WCSS")
+plt.grid(True)
+plt.show()
 
-# Pick best K automatically
-best_k = np.argmax(silhouette_scores) + 2
-print(f"Best number of clusters identified: {best_k}")
+# ----------------------------------------------------------
+#  — Final K-Means with best k
+# ----------------------------------------------------------
+final_kmeans = KMeans(n_clusters=best_k, random_state=92, n_init=20)
+kmeans_labels = final_kmeans.fit_predict(X_train_reduced)
 
-# Run Final K-Means with optimized K
-kmeans = KMeans(n_clusters=best_k, random_state=92, n_init=50, max_iter=500)
-kmeans_labels = kmeans.fit_predict(X_train_reduced)
-kmeans_silhouette = silhouette_score(X_train_reduced, kmeans_labels)
-print(f"K-Means quality score: {kmeans_silhouette:.4f}")
+from sklearn.metrics import confusion_matrix
 
+def purity_score(y_true, y_pred):
+    contingency = confusion_matrix(y_true, y_pred)
+    return np.sum(np.max(contingency, axis=0)) / np.sum(contingency)
 
-# 2. DBSCAN Clustering
-# ********************
-print("\n" + "="*50)
-print("DBSCAN CLUSTERING")
-print("="*50)
+purity_kmeans = purity_score(y_train, kmeans_labels)
+print(f"K-Means Purity with k={best_k}: {purity_kmeans:.4f}")
 
-# Using optimized parameters for UMIST
-best_eps = 7.0  
-best_min_samples = 3
+# ----------------------------------------------------------
+# — DBSCAN (automatic eps selection)
+# ----------------------------------------------------------
+print("\nRunning DBSCAN... finding optimal eps...")
 
-print(f"Using DBSCAN settings: eps={best_eps}, min_samples={best_min_samples}")
+nn = NearestNeighbors(n_neighbors=5)
+nn.fit(X_train_reduced)
+distances, _ = nn.kneighbors(X_train_reduced)
 
-dbscan = DBSCAN(eps=best_eps, min_samples=best_min_samples)
-dbscan_labels = dbscan.fit_predict(X_train_reduced)
+# Sort kth-distances
+k_distances = np.sort(distances[:, -1])
 
-real_clusters_count = len(np.unique(dbscan_labels[dbscan_labels != -1]))
-noise_points = np.sum(dbscan_labels == -1)
+plt.figure(figsize=(10,5))
+plt.plot(k_distances)
+plt.title("k-Distance Graph (use elbow for DBSCAN eps)")
+plt.xlabel("Points")
+plt.ylabel("Distance")
+plt.grid(True)
+plt.show()
 
-if real_clusters_count > 1:
-    dbscan_silhouette = silhouette_score(X_train_reduced[dbscan_labels != -1], dbscan_labels[dbscan_labels != -1])
+# Auto eps (elbow)
+eps_value = np.percentile(k_distances, 95)
+print(f"Chosen eps for DBSCAN: {eps_value:.3f}")
+
+db = DBSCAN(eps=eps_value, min_samples=5).fit(X_train_reduced)
+db_labels = db.labels_
+clusters_found = len(set(db_labels)) - (1 if -1 in db_labels else 0)
+
+print(f"DBSCAN clusters found: {clusters_found}")
+
+if clusters_found > 1:
+    purity_dbscan = purity_score(y_train, db_labels)
+    print(f"DBSCAN Purity: {purity_dbscan:.4f}")
 else:
-    dbscan_silhouette = 0
+    print("DBSCAN did not produce enough clusters for purity scoring.")
+
 
 
 # 3. Visualization ( t-SNE)
@@ -447,17 +481,22 @@ axes[0, 1].set_title(f'K-Means Clustering ({best_k} clusters)')
 plt.colorbar(scatter2, ax=axes[0, 1])
 
 # Plot 3: DBSCAN
-unique_dbscan_labels = np.unique(dbscan_labels)
-colors = plt.cm.tab20(np.linspace(0, 1, len(unique_dbscan_labels)))
+if 'db_labels' in locals() and len(set(db_labels)) > 1:
+    unique_dbscan_labels = np.unique(db_labels)
+    colors = plt.cm.tab20(np.linspace(0, 1, len(unique_dbscan_labels)))
 
-for i, label in enumerate(unique_dbscan_labels):
-    if label == -1:
-        mask = dbscan_labels == label
-        axes[1, 0].scatter(X_2d[mask, 0], X_2d[mask, 1], c='black', marker='x', alpha=0.6, label='Noise')
-    else:
-        mask = dbscan_labels == label
-        axes[1, 0].scatter(X_2d[mask, 0], X_2d[mask, 1], c=[colors[i]], alpha=0.7, label=f'Cluster {label}')
-axes[1, 0].set_title(f'DBSCAN Clustering')
+    for i, label in enumerate(unique_dbscan_labels):
+        if label == -1:
+            mask = db_labels == label
+            axes[1, 0].scatter(X_2d[mask, 0], X_2d[mask, 1], c='black', marker='x', alpha=0.6, label='Noise')
+        else:
+            mask = db_labels == label
+            axes[1, 0].scatter(X_2d[mask, 0], X_2d[mask, 1], c=[colors[i]], alpha=0.7, label=f'Cluster {label}')
+    axes[1, 0].set_title(f'DBSCAN Clustering')
+else:
+    axes[1, 0].text(0.5, 0.5, 'DBSCAN did not produce clusters', horizontalalignment='center', verticalalignment='center')
+    axes[1, 0].set_title('DBSCAN Clustering')
+
 
 # Plot 4: Purity Heatmap
 def calculate_cluster_purity(cluster_labels, true_labels):
@@ -487,6 +526,4 @@ plt.colorbar(im, ax=axes[1, 1])
 plt.tight_layout()
 plt.show()
 
-print("\n" + "="*50)
 print("ANALYSIS COMPLETED")
-print("="*50)
