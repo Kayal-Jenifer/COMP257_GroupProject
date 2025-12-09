@@ -449,7 +449,7 @@ def purity_score(y_true, y_pred):
     contingency_matrix = confusion_matrix(y_true, y_pred)
     return np.sum(np.max(contingency_matrix, axis=0)) / np.sum(contingency_matrix)
 
-# Assuming you already trained AutoEncoder1 and have the encoder
+# already trained AutoEncoder1 and have the encoder
 X_train_ae = encoder.predict(X_train_scaled)
 X_test_ae  = encoder.predict(X_test_scaled)
 
@@ -565,14 +565,39 @@ plt.show()
 
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+import pandas as pd
 
-#  K-Means Heatmap 
+# Define the expected labels to force the confusion matrix shape to (20, 20)
+n_classes = len(np.unique(y_train))
+unique_true_labels = np.arange(1, n_classes + 1) # Person 1 to 20
+unique_cluster_labels = np.arange(n_classes)     # Cluster 0 to 19
+
+
+# --- K-Means Heatmap Calculation ---
+# Force the confusion matrix to use only the 20 known true labels (1-20) 
+# and the 20 cluster labels (0-19) to ensure a 20x20 matrix.
+raw_kmeans_cm = confusion_matrix(
+    y_train, 
+    kmeans_labels, 
+    labels=unique_true_labels,  # True labels (1-20) for rows
+    sample_weight=None          # Added to simplify troubleshooting
+)
+
+# Create a DataFrame for better visualization:
+# We transpose (T) the CM so rows are Clusters (0-19) and columns are True Labels (Person 1-20)
+cluster_composition = pd.DataFrame(
+    raw_kmeans_cm.T,
+    index=[f"Cluster {i}" for i in unique_cluster_labels],
+    columns=[f"Person {i}" for i in unique_true_labels]
+)
+
 plt.figure(figsize=(12, 6))
 sns.heatmap(
     cluster_composition, 
     annot=True,           # show numbers in cells
-    fmt="d",             # integer format
-    cmap="YlGnBu",       # color map
+    fmt="d",              # integer format
+    cmap="YlGnBu",        # color map
     cbar_kws={'label': 'Number of Images'}
 )
 plt.title("K-Means Cluster Composition Heatmap")
@@ -581,7 +606,23 @@ plt.ylabel("Clusters")
 plt.tight_layout()
 plt.show()
 
-# Agglomerative Heatmap 
+# --- Agglomerative Heatmap Calculation ---
+# Force the confusion matrix to use only the 20 known true labels (1-20) 
+# and the 20 cluster labels (0-19)
+raw_agg_cm = confusion_matrix(
+    y_train, 
+    agg_labels,
+    labels=unique_true_labels, # True labels (1-20) for rows
+    sample_weight=None
+)
+
+# Create a DataFrame for better visualization (transposed)
+cluster_composition_agg = pd.DataFrame(
+    raw_agg_cm.T,
+    index=[f"Cluster {i}" for i in unique_cluster_labels],
+    columns=[f"Person {i}" for i in unique_true_labels]
+)
+
 plt.figure(figsize=(12, 6))
 sns.heatmap(
     cluster_composition_agg, 
@@ -595,5 +636,3 @@ plt.xlabel("True Labels (People)")
 plt.ylabel("Clusters")
 plt.tight_layout()
 plt.show()
-
-
