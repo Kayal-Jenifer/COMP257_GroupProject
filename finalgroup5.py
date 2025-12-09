@@ -262,7 +262,11 @@ plt.show()
 
 indices = np.random.choice(len(X_test_scaled), size=5, replace=False)
 
-plt.figure(figsize=(12, 6))
+# Store original before any transformation
+X_test_original = X_test.values
+X_test_pca_reconstructed_original = X_test_recon_dict[100]
+
+plt.figure(figsize=(12, 6)) 
 plt.suptitle("PCA Reconstruction (Original vs Reconstructed)", fontsize=16)
 
 for i, idx in enumerate(indices):
@@ -382,266 +386,150 @@ for i, idx in enumerate(indices):
 plt.tight_layout()
 plt.show()
 
-#*********************************************************************************************************
+#****************************************** Clustering ************************************************************
 
+# Helper function for Purity Score
+from sklearn.metrics import confusion_matrix
+import numpy as np
 
+def purity_score(y_true, y_pred):
+    contingency_matrix = confusion_matrix(y_true, y_pred)
+    return np.sum(np.max(contingency_matrix, axis=0)) / np.sum(contingency_matrix)
 
-# 4. Clustering 
-#*************************
+# Assuming you already trained AutoEncoder1 and have the encoder
+X_train_ae = encoder.predict(X_train_scaled)
+X_test_ae  = encoder.predict(X_test_scaled)
 
-import os
-# This fixes the K-Means memory leak warning on Windows
-os.environ['OMP_NUM_THREADS'] = '2'
+print("AutoEncoder1 latent shape:", X_train_ae.shape)
 
-from sklearn.cluster import KMeans, DBSCAN
+#********************************** K-Means Clustering *****************************************************
+
+from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
-from sklearn.manifold import TSNE
+
+n_classes = len(np.unique(y_train))
+print("Number of actual people (true classes):", n_classes)
+
+print("\n--- K-Means Clustering (AE latent) ---")
+
+kmeans = KMeans(n_clusters=n_classes, random_state=42, n_init=10)
+kmeans_labels = kmeans.fit_predict(X_train_ae)
+
+kmeans_inertia = kmeans.inertia_
+kmeans_silhouette = silhouette_score(X_train_ae, kmeans_labels)
+kmeans_purity = purity_score(y_train, kmeans_labels)
+
+print("Inertia:", kmeans_inertia)
+print("Silhouette:", kmeans_silhouette)
+print("Purity:", kmeans_purity)
+
+#****************************************** Elbow Method (Inertia vs K) *************************************
+
 import matplotlib.pyplot as plt
-import seaborn as sns
 
-print("\n" + "="*60)
-print("STARTING CLUSTERING ANALYSIS")
-print("="*60)
+K_range = range(2, 31)
+inertia_values = []
 
-# We'll use the PCA-reduced data from the previous section
-X_train_reduced = X_train_pca
-X_test_reduced = X_test_pca
+for k in K_range:
+    km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    km.fit(X_train_ae)
+    inertia_values.append(km.inertia_)
 
-print("Using PCA-reduced data for clustering")
-print(f"Original data had {X_train.shape[1]} features")
-print(f"After PCA we have {X_train_reduced.shape[1]} features")
+plt.figure(figsize=(8, 5))
+plt.plot(K_range, inertia_values, marker='o')
+plt.title("Elbow Plot (AutoEncoder Latent Space)")
+plt.xlabel("Number of clusters (k)")
+plt.ylabel("Inertia")
+plt.grid(True)
+plt.show()
 
-# First Clustering Method: K-Means
-#************************************
+#******************************** Silhouette Score vs K *******************************************************
 
-print("\n" + "="*50)
-print("K-MEANS CLUSTERING")
-print("="*50)
+silhouette_values = []
 
-# First we need to find the best number of clusters
-print("Testing different numbers of clusters to find the best one...")
+for k in K_range:
+    km = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels = km.fit_predict(X_train_ae)
+    silhouette_values.append(silhouette_score(X_train_ae, labels))
 
-wcss_scores = []  # This stores the within-cluster sum of squares
-silhouette_scores = []  # This stores how good the clustering is
+plt.figure(figsize=(8, 5))
+plt.plot(K_range, silhouette_values, marker='o')
+plt.title("Silhouette Score vs K (AE latent)")
+plt.xlabel("k")
+plt.ylabel("Silhouette Score")
+plt.grid(True)
+plt.show()
 
-# Try different numbers of clusters from 2 to 25
-for k in range(2, 26):
-    kmeans = KMeans(n_clusters=k, random_state=92, n_init=10)
-    kmeans.fit(X_train_reduced)
-    wcss_scores.append(kmeans.inertia_)
-    
-    # Calculate silhouette score if we have more than 1 cluster
-    if len(np.unique(kmeans.labels_)) > 1:
-        silhouette_scores.append(silhouette_score(X_train_reduced, kmeans.labels_))
-    else:
-        silhouette_scores.append(0)
+#*************************** Hierarchical (Agglomerative) Clustering ****************************************
 
-# Plot the results to help us choose the best K
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+from sklearn.cluster import AgglomerativeClustering
 
-# Elbow method plot
-ax1.plot(range(2, 26), wcss_scores, marker='o')
-ax1.set_xlabel('Number of Clusters')
-ax1.set_ylabel('WCSS Score')
-ax1.set_title('Elbow Method - Find Where Line Bends')
-ax1.grid(True)
+print("\n--- Agglomerative Clustering (AE latent) ---")
 
-# Silhouette scores plot
-ax2.plot(range(2, 26), silhouette_scores, marker='o', color='orange')
-ax2.set_xlabel('Number of Clusters')
-ax2.set_ylabel('Silhouette Score')
-ax2.set_title('Silhouette Scores - Higher is Better')
-ax2.grid(True)
+agg = AgglomerativeClustering(n_clusters=n_classes, linkage='ward')
+agg_labels = agg.fit_predict(X_train_ae)
+
+agg_silhouette = silhouette_score(X_train_ae, agg_labels)
+agg_purity = purity_score(y_train, agg_labels)
+
+print("Silhouette:", agg_silhouette)
+print("Purity:", agg_purity)
+
+from scipy.cluster.hierarchy import dendrogram, linkage
+
+Z = linkage(X_train_ae[:500], method='ward')  # sample to avoid memory issues
+
+plt.figure(figsize=(12, 5))
+plt.title("Dendrogram (Hierarchical Clustering)")
+dendrogram(Z, truncate_mode='level', p=5)
+plt.xlabel("Sample Index")
+plt.ylabel("Distance")
+plt.show()
+
+#******************************* 2D Visualization of Clusters *******************************************************
+
+from sklearn.decomposition import PCA
+
+pca_2d = PCA(n_components=2)
+X_2d = pca_2d.fit_transform(X_train_ae)
+
+plt.figure(figsize=(14, 6))
+
+# K-Means
+plt.subplot(1, 2, 1)
+plt.scatter(X_2d[:, 0], X_2d[:, 1], c=kmeans_labels, s=10, cmap='tab20')
+plt.title(f"K-Means Clustering (Purity: {kmeans_purity:.2f})")
+
+# Hierarchical
+plt.subplot(1, 2, 2)
+plt.scatter(X_2d[:, 0], X_2d[:, 1], c=agg_labels, s=10, cmap='tab20')
+plt.title(f"Agglomerative Clustering (Purity: {agg_purity:.2f})")
 
 plt.tight_layout()
 plt.show()
 
-# Pick the best K based on silhouette score (highest is best)
-best_k = np.argmax(silhouette_scores) + 2
-print(f"Best number of clusters: {best_k}")
+#******************************* Cluster Purity Visualization ************************************************
 
-# Now run K-Means with our chosen number of clusters
-print(f"Running K-Means with {best_k} clusters...")
-kmeans = KMeans(n_clusters=best_k, random_state=92, n_init=10)
-kmeans_labels = kmeans.fit_predict(X_train_reduced)
+import pandas as pd
 
-# Check how good the clustering is
-kmeans_silhouette = silhouette_score(X_train_reduced, kmeans_labels)
-print(f"K-Means quality score: {kmeans_silhouette:.4f}")
+# Combine true labels + cluster labels
+df_kmeans = pd.DataFrame({
+    "Actual": y_train,
+    "Cluster": kmeans_labels
+})
 
-# Second Clustering Method: DBSCAN
-#**********************************
+cluster_composition = df_kmeans.groupby(["Cluster", "Actual"]).size().unstack(fill_value=0)
 
-print("\n" + "="*50)
-print("DBSCAN CLUSTERING")
-print("="*50)
+print("=== K-Means Cluster Composition ===")
+print(cluster_composition)
 
-# DBSCAN needs us to choose two parameters: eps and min_samples
-print("Testing different DBSCAN settings to find the best ones...")
+df_agg = pd.DataFrame({
+    "Actual": y_train,
+    "Cluster": agg_labels
+})
 
-def find_best_dbscan_params(X, eps_range=np.arange(0.5, 3.0, 0.2), min_samples_range=range(3, 8)):
-    best_score = -1
-    best_eps = 0.5
-    best_min_samples = 3
-    
-    # Try different combinations of parameters
-    for eps in eps_range:
-        for min_samples in min_samples_range:
-            dbscan = DBSCAN(eps=eps, min_samples=min_samples)
-            labels = dbscan.fit_predict(X)
-            
-            # Count how many clusters we found (ignore noise points labeled as -1)
-            real_clusters = len(np.unique(labels[labels != -1]))
-            
-            # Only calculate score if we have at least 2 real clusters
-            if real_clusters > 1 and len(np.unique(labels)) > 1:
-                score = silhouette_score(X[labels != -1], labels[labels != -1])
-                if score > best_score:
-                    best_score = score
-                    best_eps = eps
-                    best_min_samples = min_samples
-    
-    return best_eps, best_min_samples, best_score
+cluster_composition_agg = df_agg.groupby(["Cluster", "Actual"]).size().unstack(fill_value=0)
 
-# Find the best parameters for our data
-best_eps, best_min_samples, best_dbscan_score = find_best_dbscan_params(X_train_reduced)
-
-print(f"Best DBSCAN settings: eps={best_eps:.2f}, min_samples={best_min_samples}")
-
-# Run DBSCAN with our best parameters
-dbscan = DBSCAN(eps=best_eps, min_samples=best_min_samples)
-dbscan_labels = dbscan.fit_predict(X_train_reduced)
-
-# Analyze what DBSCAN found
-real_clusters_count = len(np.unique(dbscan_labels[dbscan_labels != -1]))
-noise_points = np.sum(dbscan_labels == -1)
-print(f"DBSCAN found {real_clusters_count} clusters")
-print(f"Number of noise points: {noise_points} ({noise_points/len(dbscan_labels)*100:.2f}% of data)")
-
-# Calculate quality score for DBSCAN
-if real_clusters_count > 1:
-    dbscan_silhouette = silhouette_score(
-        X_train_reduced[dbscan_labels != -1], 
-        dbscan_labels[dbscan_labels != -1]
-    )
-    print(f"DBSCAN quality score: {dbscan_silhouette:.4f}")
-else:
-    dbscan_silhouette = -1
-    print("DBSCAN only found one cluster - can't calculate quality score")
-
-# Visualize the Clustering Results
-#************************************
-
-print("\n" + "="*50)
-print("CREATING CLUSTERING VISUALIZATIONS")
-print("="*50)
-
-# Use t-SNE to make 2D plots since our data is high-dimensional
-print("Creating 2D visualizations using t-SNE...")
-tsne = TSNE(n_components=2, random_state=92, perplexity=30)
-X_2d = tsne.fit_transform(X_train_reduced)
-
-# Create a big figure with 4 subplots
-fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-
-# Plot 1: Show the true labels (what we're trying to match)
-scatter1 = axes[0, 0].scatter(X_2d[:, 0], X_2d[:, 1], c=y_train, cmap='tab20', alpha=0.7)
-axes[0, 0].set_title('True Person Labels (Ground Truth)')
-axes[0, 0].set_xlabel('t-SNE Dimension 1')
-axes[0, 0].set_ylabel('t-SNE Dimension 2')
-plt.colorbar(scatter1, ax=axes[0, 0])
-
-# Plot 2: Show K-Means results
-scatter2 = axes[0, 1].scatter(X_2d[:, 0], X_2d[:, 1], c=kmeans_labels, cmap='tab20', alpha=0.7)
-axes[0, 1].set_title(f'K-Means Clustering ({best_k} clusters)\nQuality: {kmeans_silhouette:.3f}')
-axes[0, 1].set_xlabel('t-SNE Dimension 1')
-axes[0, 1].set_ylabel('t-SNE Dimension 2')
-plt.colorbar(scatter2, ax=axes[0, 1])
-
-# Plot 3: Show DBSCAN results
-unique_dbscan_labels = np.unique(dbscan_labels)
-colors = plt.cm.tab20(np.linspace(0, 1, len(unique_dbscan_labels)))
-
-for i, label in enumerate(unique_dbscan_labels):
-    if label == -1:
-        # Show noise points as black X's
-        mask = dbscan_labels == label
-        axes[1, 0].scatter(X_2d[mask, 0], X_2d[mask, 1], 
-                          c='black', marker='x', alpha=0.6, label='Noise', s=30)
-    else:
-        mask = dbscan_labels == label
-        axes[1, 0].scatter(X_2d[mask, 0], X_2d[mask, 1], 
-                          c=[colors[i]], alpha=0.7, label=f'Cluster {label}')
-
-axes[1, 0].set_title(f'DBSCAN Clustering\n(eps={best_eps:.2f}, min_samples={best_min_samples})')
-axes[1, 0].set_xlabel('t-SNE Dimension 1')
-axes[1, 0].set_ylabel('t-SNE Dimension 2')
-if len(unique_dbscan_labels) <= 10:
-    axes[1, 0].legend()
-
-# Plot 4: Analyze how well K-Means matched the true labels
-def calculate_cluster_purity(cluster_labels, true_labels):
-    unique_clusters = np.unique(cluster_labels)
-    unique_people = np.unique(true_labels)
-    
-    # Create a table showing which people are in which clusters
-    count_table = np.zeros((len(unique_clusters), len(unique_people)))
-    
-    for i, cluster_id in enumerate(unique_clusters):
-        points_in_cluster = cluster_labels == cluster_id
-        people_in_cluster = true_labels[points_in_cluster]
-        
-        for j, person_id in enumerate(unique_people):
-            count_table[i, j] = np.sum(people_in_cluster == person_id)
-    
-    # Purity measures how "pure" each cluster is
-    purity = np.sum(np.max(count_table, axis=1)) / len(cluster_labels)
-    return purity, count_table
-
-kmeans_purity, cluster_table = calculate_cluster_purity(kmeans_labels, y_train.values)
-print(f"K-Means cluster purity: {kmeans_purity:.4f}")
-
-# Show which people ended up in which clusters
-cluster_composition = cluster_table / (cluster_table.sum(axis=1, keepdims=True) + 0.0001)
-im = axes[1, 1].imshow(cluster_composition, cmap='YlOrRd', aspect='auto', vmin=0, vmax=1)
-axes[1, 1].set_title(f'K-Means: Which People are in Which Clusters\nPurity: {kmeans_purity:.4f}')
-axes[1, 1].set_xlabel('Person ID')
-axes[1, 1].set_ylabel('Cluster ID')
-plt.colorbar(im, ax=axes[1, 1], label='Percentage of Cluster')
-
-# Add numbers to the heatmap for clarity
-for i in range(cluster_composition.shape[0]):
-    for j in range(cluster_composition.shape[1]):
-        if cluster_composition[i, j] > 0.1:
-            axes[1, 1].text(j, i, f'{cluster_composition[i, j]:.2f}', 
-                           ha='center', va='center', fontsize=8, 
-                           color='white' if cluster_composition[i, j] > 0.5 else 'black')
-
-plt.tight_layout()
-plt.show()
-
-
-# Final Results Summary
-#**************************
-
-print("\n" + "="*50)
-print("CLUSTERING RESULTS SUMMARY")
-print("="*50)
-
-print(f"{'Metric':<20} {'K-Means':<10} {'DBSCAN':<10}")
-print(f"{'-'*40}")
-print(f"{'Clusters Found':<20} {best_k:<10} {real_clusters_count:<10}")
-print(f"{'Quality Score':<20} {kmeans_silhouette:.4f}    {dbscan_silhouette:.4f}")
-print(f"{'Cluster Purity':<20} {kmeans_purity:.4f}    {'N/A':<10}")
-print(f"{'Noise Points':<20} {'0':<10} {noise_points:<10}")
-
-print("\n" + "="*60)
-print("CLUSTERING ANALYSIS COMPLETED")
-print("="*60)
-
-
-
-
-
-
+print("=== Agglomerative Cluster Composition ===")
+print(cluster_composition_agg)
 
