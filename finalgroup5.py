@@ -145,59 +145,6 @@ X_train, X_val, y_train, y_val = train_test_split(
 
 
 print(f"# of training images 70%:   {len(X_train)}")
-# Data Preparation for CNN
-# Re-splitting to ensure consistency and avoid any previous mutations
-print("Re-splitting data for CNN to ensure consistency...")
-
-# We use the original dataframe 'df'
-X_cnn = df.drop("label", axis=1)
-y_cnn = df["label"]
-
-# 1. Split Test (10%)
-X_temp_cnn, X_test_cnn_raw, y_temp_cnn, y_test_cnn_raw = train_test_split(
-    X_cnn, y_cnn,
-    test_size=0.10,
-    stratify=y_cnn,
-    random_state=42
-)
-
-# 2. Split Train (70%) and Val (20%) from the remaining 90%
-# 0.222 * 0.9 ~= 0.2
-X_train_cnn_raw, X_val_cnn_raw, y_train_cnn_raw, y_val_cnn_raw = train_test_split(
-    X_temp_cnn, y_temp_cnn,
-    test_size=0.222,
-    stratify=y_temp_cnn,
-    random_state=42
-)
-
-# 3. Scale
-scaler_cnn = StandardScaler()
-X_train_cnn_scaled = scaler_cnn.fit_transform(X_train_cnn_raw)
-X_val_cnn_scaled   = scaler_cnn.transform(X_val_cnn_raw)
-X_test_cnn_scaled  = scaler_cnn.transform(X_test_cnn_raw)
-
-# 4. Reshape
-print(f"Reshaping data to ({img_h}, {img_w}, 1)...")
-X_train_cnn = X_train_cnn_scaled.reshape(-1, img_h, img_w, 1)
-X_val_cnn   = X_val_cnn_scaled.reshape(-1, img_h, img_w, 1)
-X_test_cnn  = X_test_cnn_scaled.reshape(-1, img_h, img_w, 1)
-
-print("Train CNN shape:", X_train_cnn.shape)
-print("Val CNN shape:  ", X_val_cnn.shape)
-print("Test CNN shape: ", X_test_cnn.shape)
-
-# 5. One-hot encoding
-num_classes = len(np.unique(y_cnn))
-y_train_cat = keras.utils.to_categorical(y_train_cnn_raw - 1, num_classes)
-y_val_cat   = keras.utils.to_categorical(y_val_cnn_raw - 1, num_classes)
-y_test_cat  = keras.utils.to_categorical(y_test_cnn_raw - 1, num_classes)
-
-print("DEBUG: Checking shapes before CNN training")
-print(f"X_train_cnn: {X_train_cnn.shape}")
-print(f"y_train_cat: {y_train_cat.shape}")
-print(f"X_val_cnn:   {X_val_cnn.shape}")
-print(f"y_val_cat:   {y_val_cat.shape}")
-
 print(f"# of validation images 20%: {len(X_val)}")
 print(f"# of testing images 10%:    {len(X_test)}")
 
@@ -562,14 +509,37 @@ plt.tight_layout()
 plt.show()
 
 #******************************* Cluster Purity Visualization ************************************************
-
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-#  K-Means Heatmap 
+# Build K-Means table
+df_kmeans = pd.DataFrame({
+    "Actual": y_train,
+    "Cluster": kmeans_labels
+})
+
+cluster_composition = (
+    df_kmeans.groupby(["Cluster", "Actual"])
+    .size()
+    .unstack(fill_value=0)
+)
+
+# Build Agglomerative table
+df_agg = pd.DataFrame({
+    "Actual": y_train,
+    "Cluster": agg_labels
+})
+
+cluster_composition_agg = (
+    df_agg.groupby(["Cluster", "Actual"])
+    .size()
+    .unstack(fill_value=0)
+)
+
+# K-Means Heatmap 
 plt.figure(figsize=(12, 6))
 sns.heatmap(
-    cluster_composition, 
+    cluster_composition,
     annot=True,           # show numbers in cells
     fmt="d",             # integer format
     cmap="YlGnBu",       # color map
@@ -584,15 +554,371 @@ plt.show()
 # Agglomerative Heatmap 
 plt.figure(figsize=(12, 6))
 sns.heatmap(
-    cluster_composition_agg, 
-    annot=True, 
-    fmt="d", 
+    cluster_composition_agg,
+    annot=True,
+    fmt="d",
     cmap="YlGnBu",
     cbar_kws={'label': 'Number of Images'}
 )
 plt.title("Agglomerative Cluster Composition Heatmap")
 plt.xlabel("True Labels (People)")
 plt.ylabel("Clusters")
+plt.tight_layout()
+plt.show()
+
+#******************************** Additional Code Snippets ***********************************************
+
+#****************************************** CNN Classifier *********************************************
+
+print("\n" + "="*50)
+print("CNN CLASSIFIER")
+print("="*50)
+
+# Data Preparation for CNN
+# Re-splitting to ensure consistency and avoid any previous mutations
+print("Re-splitting data for CNN to ensure consistency...")
+
+# We use the original dataframe 'df'
+X_cnn = df.drop("label", axis=1)
+y_cnn = df["label"]
+
+# 1. Split Test (10%)
+X_temp_cnn, X_test_cnn_raw, y_temp_cnn, y_test_cnn_raw = train_test_split(
+    X_cnn, y_cnn,
+    test_size=0.10,
+    stratify=y_cnn,
+    random_state=42
+)
+
+# 2. Split Train (70%) and Val (20%) from the remaining 90%
+# 0.222 * 0.9 ~= 0.2
+X_train_cnn_raw, X_val_cnn_raw, y_train_cnn_raw, y_val_cnn_raw = train_test_split(
+    X_temp_cnn, y_temp_cnn,
+    test_size=0.222,
+    stratify=y_temp_cnn,
+    random_state=42
+)
+
+# 3. Scale
+scaler_cnn = StandardScaler()
+X_train_cnn_scaled = scaler_cnn.fit_transform(X_train_cnn_raw)
+X_val_cnn_scaled   = scaler_cnn.transform(X_val_cnn_raw)
+X_test_cnn_scaled  = scaler_cnn.transform(X_test_cnn_raw)
+
+# 4. Reshape
+print(f"Reshaping data to ({img_h}, {img_w}, 1)...")
+X_train_cnn = X_train_cnn_scaled.reshape(-1, img_h, img_w, 1)
+X_val_cnn   = X_val_cnn_scaled.reshape(-1, img_h, img_w, 1)
+X_test_cnn  = X_test_cnn_scaled.reshape(-1, img_h, img_w, 1)
+
+print("Train CNN shape:", X_train_cnn.shape)
+print("Val CNN shape:  ", X_val_cnn.shape)
+print("Test CNN shape: ", X_test_cnn.shape)
+
+# 5. One-hot encoding
+num_classes = len(np.unique(y_cnn))
+y_train_cat = keras.utils.to_categorical(y_train_cnn_raw - 1, num_classes)
+y_val_cat   = keras.utils.to_categorical(y_val_cnn_raw - 1, num_classes)
+y_test_cat  = keras.utils.to_categorical(y_test_cnn_raw - 1, num_classes)
+
+#******************************** CNN Model Architecture ***************************************
+
+model_cnn = models.Sequential([
+    layers.Input(shape=(img_h, img_w, 1)),
+    
+    # Conv Block 1
+    layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
+    layers.MaxPooling2D((2, 2)),
+    
+    # Conv Block 2
+    layers.Conv2D(64, (3, 3), activation='relu', padding='same'),
+    layers.MaxPooling2D((2, 2)),
+    
+    # Conv Block 3
+    layers.Conv2D(128, (3, 3), activation='relu', padding='same'),
+    layers.MaxPooling2D((2, 2)),
+    
+    # Flatten
+    layers.Flatten(),
+    
+    # Dense Layers
+    layers.Dense(128, activation='relu'),
+    layers.Dropout(0.5), # Regularization
+    
+    # Output Layer
+    layers.Dense(num_classes, activation='softmax')
+])
+
+# Compile
+model_cnn.compile(optimizer='adam',
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+
+model_cnn.summary()
+
+#******************************** CNN Training with Early Stopping ************************************************
+
+early_stopping_cnn = keras.callbacks.EarlyStopping(
+    monitor='val_loss',
+    patience=10,
+    restore_best_weights=True
+)
+
+print("\nStarting CNN training...")
+history_cnn = model_cnn.fit(
+    X_train_cnn, y_train_cat,
+    epochs=50, # CNNs might converge faster or slower, 50 is a good start
+    batch_size=32,
+    validation_data=(X_val_cnn, y_val_cat),
+    callbacks=[early_stopping_cnn],
+    verbose=1
+)
+
+# 5. Evaluation & Visualization
+
+# Plot Training History
+plt.figure(figsize=(12, 5))
+
+# Accuracy
+plt.subplot(1, 2, 1)
+plt.plot(history_cnn.history['accuracy'], label='Train Accuracy')
+plt.plot(history_cnn.history['val_accuracy'], label='Val Accuracy')
+plt.title('CNN Model Accuracy')
+plt.xlabel('Epoch')
+plt.ylabel('Accuracy')
+plt.legend()
+
+# Loss
+plt.subplot(1, 2, 2)
+plt.plot(history_cnn.history['loss'], label='Train Loss')
+plt.plot(history_cnn.history['val_loss'], label='Val Loss')
+plt.title('CNN Model Loss')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+# Evaluate on Test Set
+print("\nEvaluating CNN on Test Set...")
+test_loss_cnn, test_acc_cnn = model_cnn.evaluate(X_test_cnn, y_test_cat, verbose=0)
+print(f"CNN Test Accuracy: {test_acc_cnn:.4f}")
+
+# Detailed Metrics
+y_pred_probs_cnn = model_cnn.predict(X_test_cnn)
+y_pred_cnn = np.argmax(y_pred_probs_cnn, axis=1)
+y_true_cnn = np.argmax(y_test_cat, axis=1)
+
+precision_cnn, recall_cnn, f1_cnn, _ = precision_recall_fscore_support(y_true_cnn, y_pred_cnn, average='weighted')
+print(f"CNN Precision (Weighted): {precision_cnn:.4f}")
+print(f"CNN Recall (Weighted):    {recall_cnn:.4f}")
+print(f"CNN F1-Score (Weighted):  {f1_cnn:.4f}")
+
+# Sample Predictions Visualization
+# We want to show cases where True == Pred (as requested by user "true values should match predicted values")
+# But we should show a mix or just random. The user said "at last..the true values should match predictided values"
+# which implies they want to see successful classifications.
+# I will filter for correct predictions to display.
+
+correct_indices = np.where(y_pred_cnn == y_true_cnn)[0]
+if len(correct_indices) >= 5:
+    indices = np.random.choice(correct_indices, size=5, replace=False)
+else:
+    indices = correct_indices # Show all if fewer than 5
+
+plt.figure(figsize=(15, 4))
+plt.suptitle("CNN Sample Correct Predictions", fontsize=14)
+
+for i, idx in enumerate(indices):
+    ax = plt.subplot(1, 5, i + 1)
+    
+    # Image for display (reshape to 2D)
+    img = X_test_cnn[idx].reshape(img_h, img_w)
+    
+    true_label = y_true_cnn[idx] + 1
+    pred_label = y_pred_cnn[idx] + 1
+    
+    plt.imshow(img, cmap='gray')
+    
+    color = 'green' # Since we filtered for correct, it will always be green
+    plt.title(f"True: {true_label}\nPred: {pred_label}", color=color)
+    plt.axis("off")
+
+plt.tight_layout()
+plt.show()
+
+#************* Image Recognition using Supervised Learning – Neural Network Classifier ************************
+
+# Feature Engineering (Preparing Cluster Features)
+print("Generating cluster distance features for all subsets...")
+
+# 1. Project all data into the Autoencoder Latent Space
+lat_train = encoder.predict(X_train_scaled, verbose=0)
+lat_val   = encoder.predict(X_val_scaled, verbose=0)
+lat_test  = encoder.predict(X_test_scaled, verbose=0)
+
+# 2. Get distances to all cluster centroids (fit in Part 4)
+# Shape will be (n_samples, n_clusters)
+dist_train = kmeans.transform(lat_train)
+dist_val   = kmeans.transform(lat_val)
+dist_test  = kmeans.transform(lat_test)
+
+# Normalize these distances so they play nice with the Neural Network
+# We use MinMaxScaler because distances are positive
+dist_scaler = MinMaxScaler()
+dist_train_norm = dist_scaler.fit_transform(dist_train)
+dist_val_norm   = dist_scaler.transform(dist_val)
+dist_test_norm  = dist_scaler.transform(dist_test)
+
+print(f"Cluster Feature Shape (Train): {dist_train_norm.shape}")
+
+# Data Formatting for CNN
+
+# Reshape images for CNN (Height, Width, Channel)
+X_train_img = X_train_scaled.reshape(-1, img_h, img_w, 1)
+X_val_img   = X_val_scaled.reshape(-1, img_h, img_w, 1)
+X_test_img  = X_test_scaled.reshape(-1, img_h, img_w, 1)
+
+# One-hot encode targets
+num_classes = len(np.unique(y_train))
+y_train_cat = keras.utils.to_categorical(y_train - 1, num_classes)
+y_val_cat   = keras.utils.to_categorical(y_val - 1, num_classes)
+y_test_cat  = keras.utils.to_categorical(y_test - 1, num_classes)
+
+#********************************* Build the model architecture ***********************************
+
+# Input 1: The Image
+input_img = layers.Input(shape=(img_h, img_w, 1), name='image_input')
+x = layers.Conv2D(32, (3, 3), activation='relu', padding='same')(input_img)
+x = layers.MaxPooling2D((2, 2))(x)
+x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+x = layers.MaxPooling2D((2, 2))(x)
+x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+x = layers.MaxPooling2D((2, 2))(x)
+x = layers.Flatten()(x)
+img_features = layers.Dense(128, activation='relu')(x)
+
+# Input 2: The Cluster Distances (Metadata)
+input_dist = layers.Input(shape=(dist_train_norm.shape[1],), name='cluster_input')
+dist_features = layers.Dense(32, activation='relu')(input_dist)
+
+# Concatenate both branches
+combined = layers.concatenate([img_features, dist_features])
+
+# Final Classification Layers
+z = layers.Dense(128, activation='relu')(combined)
+z = layers.Dropout(0.5)(z) # Regularization to prevent overfitting
+output = layers.Dense(num_classes, activation='softmax')(z)
+
+# Create Model
+model = models.Model(inputs=[input_img, input_dist], outputs=output)
+
+# Optimizer: Adam is standard for its adaptive learning rate
+# Loss: Categorical Crossentropy because targets are one-hot encoded
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+
+print("\nHybrid CNN Architecture:")
+model.summary()
+
+#*************************************** Training ************************************************
+
+# Early Stopping to prevent overfitting (stops if val_loss doesn't improve)
+early_stop = keras.callbacks.EarlyStopping(
+    monitor='val_loss', 
+    patience=8, 
+    restore_best_weights=True,
+    verbose=1
+)
+
+print("\nStarting Training...")
+history = model.fit(
+    x={'image_input': X_train_img, 'cluster_input': dist_train_norm},
+    y=y_train_cat,
+    epochs=40,
+    batch_size=32,
+    validation_data=(
+        {'image_input': X_val_img, 'cluster_input': dist_val_norm},
+        y_val_cat
+    ),
+    callbacks=[early_stop]
+)
+
+#*************************************** Evaluation & Metrics ************************************************
+
+# 1. Plotting Curves
+plt.figure(figsize=(12, 5))
+
+# Accuracy
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'], label='Train Acc')
+plt.plot(history.history['val_accuracy'], label='Val Acc')
+plt.title('Model Accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend()
+plt.grid(True)
+
+# Loss
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'], label='Train Loss')
+plt.plot(history.history['val_loss'], label='Val Loss')
+plt.title('Model Loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend()
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+# 2. Test Set Metrics
+print("\nTest Set Evaluation:")
+loss, acc = model.evaluate(
+    {'image_input': X_test_img, 'cluster_input': dist_test_norm}, 
+    y_test_cat, 
+    verbose=0
+)
+print(f"Final Test Accuracy: {acc*100:.2f}%")
+
+# Generate Predictions
+y_pred_probs = model.predict({'image_input': X_test_img, 'cluster_input': dist_test_norm})
+y_pred = np.argmax(y_pred_probs, axis=1)
+y_true = np.argmax(y_test_cat, axis=1)
+
+# Precision, Recall, F1
+precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='weighted')
+print(f"Precision: {precision:.4f}")
+print(f"Recall:    {recall:.4f}")
+print(f"F1 Score:  {f1:.4f}")
+
+#*************************************** Visualizing Sample Predictions ************************************************
+
+# Select random samples
+indices = np.random.choice(len(X_test), size=5, replace=False)
+
+plt.figure(figsize=(15, 4))
+plt.suptitle("Model Predictions (Image + Cluster Info)\n\n", fontsize=14)
+
+for i, idx in enumerate(indices):
+    ax = plt.subplot(1, 5, i + 1)
+    
+    # Grab original image for display
+    img_display = X_test_img[idx].reshape(img_h, img_w)
+    
+    # Get labels (adding 1 because we subtracted 1 for one-hot encoding earlier)
+    true_lbl = y_true[idx] + 1
+    pred_lbl = y_pred[idx] + 1
+    
+    # Color code: Green if correct, Red if wrong
+    color = 'green' if true_lbl == pred_lbl else 'red'
+    
+    plt.imshow(img_display, cmap='gray')
+    plt.title(f"True: {true_lbl}\nPred: {pred_lbl}", color=color, fontweight='bold')
+    plt.axis('off')
+
 plt.tight_layout()
 plt.show()
 
