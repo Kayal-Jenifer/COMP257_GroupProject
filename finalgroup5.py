@@ -1,17 +1,23 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Nov 11 16:26:15 2025
-
-@author: kionahutchins
-"""
-
+import os
 import scipy.io
 import numpy as np
 import pandas as pd
+import random
+import tensorflow as tf
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans, AgglomerativeClustering
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
+from sklearn.metrics import silhouette_score
+from tensorflow import keras
+from tensorflow.keras import layers, models
+
+random.seed(42)
+np.random.seed(42)
+tf.random.set_seed(42)
+
 #*******************************************************************************
 # starting data preperation in q.1 
 #*******************************************************************************
@@ -126,7 +132,7 @@ X_temp, X_test, y_temp, y_test = train_test_split(
     X, y,
     test_size=0.10,
     stratify=y,
-    random_state=92
+    random_state=42
 )
 
 #training 70% and validating 20%
@@ -134,8 +140,9 @@ X_train, X_val, y_train, y_val = train_test_split(
     X_temp, y_temp,
     test_size=0.222,     
     stratify=y_temp,
-    random_state=92
+    random_state=42
 )
+
 
 print(f"# of training images 70%:   {len(X_train)}")
 print(f"# of validation images 20%: {len(X_val)}")
@@ -146,6 +153,10 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_val_scaled = scaler.transform(X_val)
 X_test_scaled = scaler.transform(X_test)
+
+print("Train shape:", X_train_scaled.shape)
+print("Val shape:", X_val_scaled.shape)
+print("Test shape:", X_test_scaled.shape)
 
 #now plotting all the distribution of the images 
 
@@ -169,170 +180,209 @@ plt.show()
 
 
 
-#*******************************************************************************
-from sklearn.decomposition import PCA
-import numpy as np
-import matplotlib.pyplot as plt
+#********************************* Before PCA tsne visualization ************************************
 
-# Fit full PCA to compute cumulative explained variance 
-pca_full = PCA().fit(X_train_scaled)
-cumulative_variance = np.cumsum(pca_full.explained_variance_ratio_)
+from sklearn.manifold import TSNE
 
-# Find number of components needed for 95% variance 
-n_components_95 = np.searchsorted(cumulative_variance, 0.95) + 1
-print("Number of PCA components to retain 95% variance:", n_components_95)
+tsne = TSNE(n_components=2, perplexity=30, learning_rate=200)
+X_train_tsne = tsne.fit_transform(X_train_scaled)
 
-# Build PCA 95% model
-pca = PCA(n_components=n_components_95)
-X_train_pca = pca.fit_transform(X_train_scaled)
-X_train_pca_reconstructed = pca.inverse_transform(X_train_pca)
+plt.figure(figsize=(7,6))
+plt.scatter(X_train_tsne[:,0], X_train_tsne[:,1], c=y_train, cmap="tab20", s=8)
+plt.title("Before PCA (t-SNE Visualization)")
+plt.xlabel("Dim 1")
+plt.ylabel("Dim 2")
+plt.show()
 
-X_test_pca = pca.transform(X_test_scaled)
-X_test_pca_reconstructed = pca.inverse_transform(X_test_pca)
+#********************************* Apply PCA *********************************************************
 
 components_list = [10, 20, 50, 100]
-explained_variances = []
+
+pca_models = {}
+X_test_recon_dict = {}
+explained_variances = {}
 
 for n in components_list:
-    pca_temp = PCA(n_components=n)
-    pca_temp.fit(X_train_scaled)
-    explained_variances.append(pca_temp.explained_variance_ratio_.sum())
+    print(f"\n=== PCA with {n} components ===")
+
+    pca = PCA(n_components=n)
+    X_train_pca = pca.fit_transform(X_train_scaled)
+    X_test_pca = pca.transform(X_test_scaled)
+
+    # store
+    pca_models[n] = pca
+    X_test_recon_dict[n] = scaler.inverse_transform(pca.inverse_transform(X_test_pca))
+
+    # explained variance ratio
+    exp_var = pca.explained_variance_ratio_.sum()
+    explained_variances[n] = exp_var
+    print(f"Explained Variance Ratio: {exp_var:.4f}")
+
 
 plt.figure(figsize=(8,5))
-plt.plot(components_list, explained_variances, marker='o')
+plt.plot(components_list,[explained_variances[n] for n in components_list],marker='o')
 plt.title("Explained Variance vs PCA Components")
 plt.xlabel("Number of Components")
-plt.ylabel("Total Explained Variance")
+plt.ylabel("Explained Variance")
 plt.grid(True)
 plt.show()
 
-#*******************************************************************************
-import matplotlib.pyplot as plt
+#**************************** Class distribution after PCA *********************************************
 
-# Choose some random indices from test set
-indices = np.random.choice(len(X_test_scaled), size=5, replace=False)
+# AFTER PCA → labels DO NOT CHANGE, only features change
+plt.figure(figsize=(12,4))
+plt.subplot(1,3,1)
+y_train.value_counts().sort_index().plot(kind='bar')
+plt.title("Training Distribution AFTER PCA")
 
-plt.figure(figsize=(12, 6))
-plt.suptitle("PCA Reconstruction Visualization", fontsize=16)
+plt.subplot(1,3,2)
+y_val.value_counts().sort_index().plot(kind='bar')
+plt.title("Validation Distribution AFTER PCA")
 
-for i, idx in enumerate(indices):
-
-    # Original image
-    ax = plt.subplot(2, 5, i + 1)
-    plt.imshow(X_test_scaled[idx].reshape(112, 92), cmap='gray')
-    plt.axis("off")
-    ax.set_title("Original")
-
-    # PCA reconstructed image
-    ax = plt.subplot(2, 5, i + 6)
-    plt.imshow(X_test_pca_reconstructed[idx].reshape(112, 92), cmap='gray')
-    plt.axis("off")
-    ax.set_title("PCA Recon.")
+plt.subplot(1,3,3)
+y_test.value_counts().sort_index().plot(kind='bar')
+plt.title("Testing Distribution AFTER PCA")
 
 plt.tight_layout()
 plt.show()
 
-#*******************************************************************************
+#************************* After PCA visualization ****************************************************
+
+pca_vis = PCA(n_components=2)
+X_train_pca2 = pca_vis.fit_transform(X_train_scaled)
+
+plt.figure(figsize=(7,6))
+plt.scatter(X_train_pca2[:,0], X_train_pca2[:,1], c=y_train, cmap="tab20", s=8)
+plt.title("After PCA (2D PCA Visualization)")
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.show()
+
+#********************************* PCA Reconstruction Visualization ************************************
+
+indices = np.random.choice(len(X_test_scaled), size=5, replace=False)
+
+plt.figure(figsize=(12, 6))
+plt.suptitle("PCA Reconstruction (Original vs Reconstructed)", fontsize=16)
+
+for i, idx in enumerate(indices):
+
+    # Original image (REAL pixel space)
+    ax = plt.subplot(2, 5, i + 1)
+    plt.imshow(X_test_original[idx].reshape(112, 92), cmap='gray')
+    plt.axis("off")
+    ax.set_title("Original")
+
+    # Reconstructed image (REAL pixel space)
+    ax = plt.subplot(2, 5, i + 6)
+    plt.imshow(X_test_pca_reconstructed_original[idx].reshape(112, 92), cmap='gray')
+    plt.axis("off")
+    ax.set_title("Reconstructed")
+
+plt.tight_layout()
+plt.show()
+
+#************************************** Autoencoders ******************************************************
+
 from tensorflow.keras import layers, models
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 
-scaler = MinMaxScaler()  # Scales each feature to [0,1]
+# scaling
+
+scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
-X_val_scaled = scaler.transform(X_val)
-X_test_scaled = scaler.transform(X_test)
+X_val_scaled   = scaler.transform(X_val)
+X_test_scaled  = scaler.transform(X_test)
 
-# Size of input (number of pixels)
+# For reconstruction later
+X_test_original = scaler.inverse_transform(X_test_scaled)
+
+# autoencoder model
+
 input_dim = X_train_scaled.shape[1]
+latent_dim = 100
 
-# Latent dimension (compressed size)
-latent_dim = 50
-
-# Build the autoencoder
 input_layer = layers.Input(shape=(input_dim,))
 
 # Encoder
-encoded = layers.Dense(200, activation='relu')(input_layer)
-encoded = layers.Dense(100, activation='relu')(encoded)
-latent = layers.Dense(latent_dim, activation='relu')(encoded)
+encoded = layers.Dense(500, activation='relu')(input_layer)
+encoded = layers.Dense(300, activation='relu')(encoded)
+encoded = layers.Dense(150, activation='relu')(encoded)
+latent  = layers.Dense(latent_dim, activation='relu')(encoded)
 
 # Decoder
-decoded = layers.Dense(100, activation='relu')(latent)
-decoded = layers.Dense(200, activation='relu')(decoded)
-output_layer = layers.Dense(input_dim, activation='sigmoid')(decoded)
+decoded = layers.Dense(150, activation='relu')(latent)
+decoded = layers.Dense(300, activation='relu')(decoded)
+decoded = layers.Dense(500, activation='relu')(decoded)
+output_layer = layers.Dense(input_dim, activation='linear')(decoded)   # FIXED
 
-# Model
 autoencoder = models.Model(input_layer, output_layer)
-encoder = models.Model(input_layer, latent)  # To extract latent features later
+encoder = models.Model(input_layer, latent)
 
 autoencoder.compile(optimizer='adam', loss='mse')
-
 autoencoder.summary()
+
+#*********************************************************************************************************
 
 # Train the autoencoder
 history = autoencoder.fit(
     X_train_scaled, X_train_scaled,
-    epochs=30,
+    epochs=80,
     batch_size=32,
     validation_data=(X_val_scaled, X_val_scaled)
 )
 
-# Reconstruction from autoencoder
-X_train_ae_reconstructed = autoencoder.predict(X_train_scaled)
-X_val_ae_reconstructed   = autoencoder.predict(X_val_scaled)
-X_test_ae_reconstructed  = autoencoder.predict(X_test_scaled)
+# reconstruction
+X_test_ae_reconstructed = autoencoder.predict(X_test_scaled)
 
-from sklearn.decomposition import PCA
-import numpy as np
+# Convert AE output BACK to real pixel scale
+X_test_ae_reconstructed_original = scaler.inverse_transform(X_test_ae_reconstructed)
 
-# --- Compute reconstruction error for autoencoder ---
-train_error_ae = np.mean(np.square(X_train_scaled - X_train_ae_reconstructed))
-val_error_ae = np.mean(np.square(X_val_scaled - X_val_ae_reconstructed))
-test_error_ae = np.mean(np.square(X_test_scaled - X_test_ae_reconstructed))
 
-print("Autoencoder Reconstruction Error:")
-print(f"Train: {train_error_ae:.4f}, Val: {val_error_ae:.4f}, Test: {test_error_ae:.4f}")
-
-# --- PCA with same latent dimension ---
+# PCA (same latent_dim)
 pca = PCA(n_components=latent_dim)
 X_train_pca = pca.fit_transform(X_train_scaled)
-X_train_pca_reconstructed = pca.inverse_transform(X_train_pca)
-
-X_val_pca = pca.transform(X_val_scaled)
-X_val_pca_reconstructed = pca.inverse_transform(X_val_pca)
-
 X_test_pca = pca.transform(X_test_scaled)
 X_test_pca_reconstructed = pca.inverse_transform(X_test_pca)
 
-# --- Compute reconstruction error for PCA ---
-train_error_pca = np.mean(np.square(X_train_scaled - X_train_pca_reconstructed))
-val_error_pca = np.mean(np.square(X_val_scaled - X_val_pca_reconstructed))
-test_error_pca = np.mean(np.square(X_test_scaled - X_test_pca_reconstructed))
+# reconstruction error
+train_error_ae = np.mean((X_train_scaled - autoencoder.predict(X_train_scaled))**2)
+test_error_ae  = np.mean((X_test_scaled  - X_test_ae_reconstructed)**2)
+
+train_error_pca = np.mean((X_train_scaled - pca.inverse_transform(X_train_pca))**2)
+test_error_pca  = np.mean((X_test_scaled  - X_test_pca_reconstructed)**2)
+
+print("Autoencoder Reconstruction Error:")
+print(train_error_ae, test_error_ae)
 
 print("\nPCA Reconstruction Error:")
-print(f"Train: {train_error_pca:.4f}, Val: {val_error_pca:.4f}, Test: {test_error_pca:.4f}")
+print(train_error_pca, test_error_pca)
 
-#*******************************************************************************
-import matplotlib.pyplot as plt
+#************************* Autoencoders Reconstruction Visualization ***********************************
 
-# pick 5 samples from validation set for visualization
-n = 5
-plt.figure(figsize=(10, 4))
+IMG_H, IMG_W = 112, 92
+indices = [0, 5, 10, 15]
 
-for i in range(n):
-    # original
-    ax = plt.subplot(2, n, i + 1)
-    plt.imshow(X_val_scaled[i].reshape(112, 92), cmap='gray')
-    plt.title("Original")
-    plt.axis("off")
+plt.figure(figsize=(12, 3))
 
-    # reconstructed by autoencoder
-    ax = plt.subplot(2, n, i + 1 + n)
-    plt.imshow(X_val_ae_reconstructed[i].reshape(112, 92), cmap='gray')
-    plt.title("Reconstructed")
-    plt.axis("off")
+for i, idx in enumerate(indices):
 
-plt.suptitle("Autoencoder Reconstruction Visualization")
+    # Original
+    plt.subplot(2, len(indices), i + 1)
+    plt.imshow(X_test_original[idx].reshape(IMG_H, IMG_W), cmap='gray')
+    plt.title(f"Original")
+    plt.axis('off')
+
+    # Reconstructed
+    plt.subplot(2, len(indices), i + 1 + len(indices))
+    plt.imshow(X_test_ae_reconstructed_original[idx].reshape(IMG_H, IMG_W), cmap='gray')
+    plt.title(f"Reconstructed")
+    plt.axis('off')
+
+plt.tight_layout()
 plt.show()
+
+#*********************************************************************************************************
 
 
 
