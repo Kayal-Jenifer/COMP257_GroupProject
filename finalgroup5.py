@@ -145,6 +145,59 @@ X_train, X_val, y_train, y_val = train_test_split(
 
 
 print(f"# of training images 70%:   {len(X_train)}")
+# Data Preparation for CNN
+# Re-splitting to ensure consistency and avoid any previous mutations
+print("Re-splitting data for CNN to ensure consistency...")
+
+# We use the original dataframe 'df'
+X_cnn = df.drop("label", axis=1)
+y_cnn = df["label"]
+
+# 1. Split Test (10%)
+X_temp_cnn, X_test_cnn_raw, y_temp_cnn, y_test_cnn_raw = train_test_split(
+    X_cnn, y_cnn,
+    test_size=0.10,
+    stratify=y_cnn,
+    random_state=42
+)
+
+# 2. Split Train (70%) and Val (20%) from the remaining 90%
+# 0.222 * 0.9 ~= 0.2
+X_train_cnn_raw, X_val_cnn_raw, y_train_cnn_raw, y_val_cnn_raw = train_test_split(
+    X_temp_cnn, y_temp_cnn,
+    test_size=0.222,
+    stratify=y_temp_cnn,
+    random_state=42
+)
+
+# 3. Scale
+scaler_cnn = StandardScaler()
+X_train_cnn_scaled = scaler_cnn.fit_transform(X_train_cnn_raw)
+X_val_cnn_scaled   = scaler_cnn.transform(X_val_cnn_raw)
+X_test_cnn_scaled  = scaler_cnn.transform(X_test_cnn_raw)
+
+# 4. Reshape
+print(f"Reshaping data to ({img_h}, {img_w}, 1)...")
+X_train_cnn = X_train_cnn_scaled.reshape(-1, img_h, img_w, 1)
+X_val_cnn   = X_val_cnn_scaled.reshape(-1, img_h, img_w, 1)
+X_test_cnn  = X_test_cnn_scaled.reshape(-1, img_h, img_w, 1)
+
+print("Train CNN shape:", X_train_cnn.shape)
+print("Val CNN shape:  ", X_val_cnn.shape)
+print("Test CNN shape: ", X_test_cnn.shape)
+
+# 5. One-hot encoding
+num_classes = len(np.unique(y_cnn))
+y_train_cat = keras.utils.to_categorical(y_train_cnn_raw - 1, num_classes)
+y_val_cat   = keras.utils.to_categorical(y_val_cnn_raw - 1, num_classes)
+y_test_cat  = keras.utils.to_categorical(y_test_cnn_raw - 1, num_classes)
+
+print("DEBUG: Checking shapes before CNN training")
+print(f"X_train_cnn: {X_train_cnn.shape}")
+print(f"y_train_cat: {y_train_cat.shape}")
+print(f"X_val_cnn:   {X_val_cnn.shape}")
+print(f"y_val_cat:   {y_val_cat.shape}")
+
 print(f"# of validation images 20%: {len(X_val)}")
 print(f"# of testing images 10%:    {len(X_test)}")
 
@@ -510,26 +563,37 @@ plt.show()
 
 #******************************* Cluster Purity Visualization ************************************************
 
-import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-# Combine true labels + cluster labels
-df_kmeans = pd.DataFrame({
-    "Actual": y_train,
-    "Cluster": kmeans_labels
-})
+#  K-Means Heatmap 
+plt.figure(figsize=(12, 6))
+sns.heatmap(
+    cluster_composition, 
+    annot=True,           # show numbers in cells
+    fmt="d",             # integer format
+    cmap="YlGnBu",       # color map
+    cbar_kws={'label': 'Number of Images'}
+)
+plt.title("K-Means Cluster Composition Heatmap")
+plt.xlabel("True Labels (People)")
+plt.ylabel("Clusters")
+plt.tight_layout()
+plt.show()
 
-cluster_composition = df_kmeans.groupby(["Cluster", "Actual"]).size().unstack(fill_value=0)
+# Agglomerative Heatmap 
+plt.figure(figsize=(12, 6))
+sns.heatmap(
+    cluster_composition_agg, 
+    annot=True, 
+    fmt="d", 
+    cmap="YlGnBu",
+    cbar_kws={'label': 'Number of Images'}
+)
+plt.title("Agglomerative Cluster Composition Heatmap")
+plt.xlabel("True Labels (People)")
+plt.ylabel("Clusters")
+plt.tight_layout()
+plt.show()
 
-print("=== K-Means Cluster Composition ===")
-print(cluster_composition)
-
-df_agg = pd.DataFrame({
-    "Actual": y_train,
-    "Cluster": agg_labels
-})
-
-cluster_composition_agg = df_agg.groupby(["Cluster", "Actual"]).size().unstack(fill_value=0)
-
-print("=== Agglomerative Cluster Composition ===")
-print(cluster_composition_agg)
 
